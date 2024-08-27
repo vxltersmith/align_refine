@@ -1,0 +1,5 @@
+core
+checkpoints/
+.vscode/
+__pycache__/
+lightning_logs/

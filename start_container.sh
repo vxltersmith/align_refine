@@ -1,0 +1,1 @@
+docker run --gpus all --shm-size=16g -v /var/nfs/dev_repos/:/app -v /var/nfs/datasets:/data -it dd10c701c250

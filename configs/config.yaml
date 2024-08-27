@@ -1,0 +1,96 @@
+defaults:
+  - trainer: default_trainer
+  - _self_
+
+model:
+  _target_: model.CTCBertModel
+  # base_model_name: "bert-base-uncased" # 110 million
+  # base_model_name: "huawei-noah/TinyBERT_General_4L_312D" # 66 million
+  # base_model_name: "distilbert-base-uncased" # 14.5 million
+  base_model_name: "prajjwal1/bert-mini" # 11.3 million
+  new_max_position_embeddings: 1024
+  extend_positional_embeddings_on_load: False
+  vocab_size: 128 # CTC vocab size from STT model
+  mix_wth_factor: 0.25
+  refine_n_steps: 5
+  # Augmentations
+  transform_eval: false
+  transforms_cfg:
+    - _target_: transform.LogitsSmoothingTransform
+      max_smooth_factor: 0.35
+      min_smooth_factor: 0.05
+      labels_dim: -1
+      p: 0.05
+      by_pass: True
+    - _target_: transform.LogitsRandomMaxTransform
+      randoms_factor: 0.15 # portion of timesteps replace max
+      labels_dim: -1
+      p: 0.25
+      #by_pass: True
+
+checkpointing:
+  # continue_from: # Full path to .ckpt to continue from
+  checkpoint_handler:                                               # Model checkpoint callback settings
+    _target_: 'pytorch_lightning.callbacks.ModelCheckpoint'
+    dirpath: 'checkpoints/overfit_align_refine_golos1hours'              # Directory to save checkpoints
+    filename: 'overfit_align_refine_1hours'                         # Filename template
+    # filename: 'align_refine_100hours'                             # Filename template
+    monitor: 'validation_loss'                                      # Metric to monitor
+    save_last: true                                                 # Save last checkpoint
+    save_top_k: -1                                                  # Save all checkpoints
+    verbose: true                                                   # Log saving
+    every_n_epochs: 4                                               # Save every n epoch
+    # mode: 'min'                                                   # Save the checkpoint with minimum 'val_loss'
+
+dataset:
+  _target_: dataset.CTCDataModule  
+  batch_size: 8
+  dataset_type: 'precompute_asr'
+  num_workers: 0
+  # CTC model tokenizer
+  tokenizer_path: './tokenizer/tokenizer.model'
+  # Train\val sets definition
+  dataset_config:
+    # manifest_path: /data/golos/100hours_logprobs.jsonl
+    manifest_path: '/data/golos/10min_logprobs.jsonl'  
+    # manifest_path: '/data/golos/1hour_logprobs.jsonl'
+    audio_dir: '/data/golos/train_opus'
+    file_format: '.opus'
+    # keep_in_memory: True
+  val_dataset_config:
+    # manifest_path: '/data/golos/test_farfield_logprobs.jsonl'
+    # audio_dir: '/data/golos/test_opus/farfield/'
+    manifest_path: '/data/golos/10min_logprobs.jsonl'
+    # manifest_path: '/data/golos/1hour_logprobs.jsonl'
+    audio_dir: '/data/golos/train_opus'
+    file_format: '.opus'
+    # keep_in_memory: True
+
+# use_lr_scheduler: True - instantiate lr_scheduler in the model during training
+use_lr_scheduler: True
+lr_scheduler:
+  _target_: torch.optim.lr_scheduler.CosineAnnealingWarmRestarts
+  T_0: 5
+  T_mult: 2
+  eta_min: 1e-25
+  last_epoch: -1
+  verbose: True
+
+optimizer:
+  _target_: torch.optim.Adam
+  lr: 1e-4
+  betas: [ 0.9, 0.98 ]
+  eps: 1e-09
+  weight_decay: 1e-25
+
+trainer:
+  _target_: pytorch_lightning.Trainer
+  max_epochs: 100000
+  devices: 3
+  accelerator: 'gpu'
+  #overfit_batches: 1                           # Single batch for debugging
+  limit_val_batches: 0.25                       # Use only 
+  strategy: ddp_find_unused_parameters_true     # Use DDP and ignore non-trainable params
+  check_val_every_n_epoch: 100                  # Validate every n epochs
+  log_every_n_steps: 2                          # Log less frequently to reduce overhead
+  callbacks: []                                 # No additional callbacks
